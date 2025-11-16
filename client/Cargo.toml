@@ -1,0 +1,13 @@
+[package]
+name = "client"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+bevy = { workspace = true, default-features = true }
+bevy_renet = { workspace = true }
+renet = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
+bincode = { workspace = true }
+shared = { path = "../shared" }
+rand = { workspace = true }

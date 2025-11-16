@@ -1,6 +1,23 @@
-[package]
-name = "odyssey"
-version = "0.1.0"
-edition = "2024"
+[workspace]
+members = [
+    "shared",
+    "server",
+    "client",
+]
+resolver = "2"
 
-[dependencies]
+[workspace.package]
+edition = "2021"
+version = "0.1.0"
+authors = ["Odyssey Team"]
+
+[workspace.dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+bincode = "1"
+bevy = { version = "0.17", features = ["bevy_winit", "png", "dynamic_linking"] }
+bevy_renet = "3.0.0"
+renet = "1.2.0"
+glam = { version = "0.27", features = ["serde"] }
+rand = "0.8"
+thiserror = "1"
