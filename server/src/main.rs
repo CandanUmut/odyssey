@@ -158,7 +158,11 @@ fn apply_inputs(mut room: ResMut<RoomState>) {
     }
     let dt = 1.0 / TICK_RATE as f32;
     for player in room.players.values_mut() {
-        player.kin = integrate_input(player.kin.clone(), &player.last_input, dt);
+        let mut kin = integrate_input(player.kin.clone(), &player.last_input, dt);
+        let region = region_for_position(kin.position);
+        let radius = tube_radius(region);
+        kin.position = clamp_to_radius(kin.position, radius);
+        player.kin = kin;
     }
 }
 
@@ -206,8 +210,8 @@ fn snapshot_broadcast_system(mut server: ResMut<RenetServer>, room: Res<RoomStat
         .iter()
         .map(|(id, player)| EntitySnapshot {
             id: *id,
-            position: player.kin.position,
-            velocity: player.kin.velocity,
+            position: player.kin.position.to_array(),
+            velocity: player.kin.velocity.to_array(),
             stamina: player.kin.stamina,
             region: region_for_position(player.kin.position),
         })

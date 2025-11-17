@@ -1,4 +1,3 @@
-use glam::Vec2;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -12,8 +11,8 @@ pub struct PlayerSummary {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EntitySnapshot {
     pub id: u64,
-    pub position: Vec2,
-    pub velocity: Vec2,
+    pub position: [f32; 3],
+    pub velocity: [f32; 3],
     pub stamina: f32,
     pub region: RegionId,
 }
@@ -74,7 +73,7 @@ pub enum RoomPhase {
     Finished,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 pub enum RegionId {
     Vagina,
     Cervix,

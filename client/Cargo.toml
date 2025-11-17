@@ -4,8 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-bevy = "0.17.2"
-
+bevy = { workspace = true }
 bevy_renet = { workspace = true }
 renet = { workspace = true }
 serde = { workspace = true, features = ["derive"] }

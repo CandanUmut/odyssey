@@ -1,9 +1,9 @@
-use glam::Vec2;
+use glam::Vec3;
 use serde::{Deserialize, Serialize};
 
 use crate::{RegionId, REGION_MARKERS, REGION_NAMES};
 
-pub fn region_for_position(position: Vec2) -> RegionId {
+pub fn region_for_position(position: Vec3) -> RegionId {
     let x = position.x.max(0.0);
     match x {
         v if v < REGION_MARKERS[1] => RegionId::Vagina,
@@ -57,6 +57,17 @@ pub fn tooltips() -> Vec<RegionTooltip> {
     ]
 }
 
+pub fn tube_radius(region: RegionId) -> f32 {
+    match region {
+        RegionId::Vagina => 160.0,
+        RegionId::Cervix => 120.0,
+        RegionId::Uterus => 150.0,
+        RegionId::Utj => 90.0,
+        RegionId::Tube => 110.0,
+        RegionId::Ampulla => 140.0,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -64,12 +75,21 @@ mod tests {
     #[test]
     fn region_progression() {
         let checkpoints = [
-            (Vec2::new(10.0, 0.0), RegionId::Vagina),
-            (Vec2::new(REGION_MARKERS[1] + 1.0, 0.0), RegionId::Cervix),
-            (Vec2::new(REGION_MARKERS[2] + 1.0, 0.0), RegionId::Uterus),
-            (Vec2::new(REGION_MARKERS[3] + 1.0, 0.0), RegionId::Utj),
-            (Vec2::new(REGION_MARKERS[4] + 1.0, 0.0), RegionId::Tube),
-            (Vec2::new(REGION_MARKERS[5] + 10.0, 0.0), RegionId::Ampulla),
+            (Vec3::new(10.0, 0.0, 0.0), RegionId::Vagina),
+            (
+                Vec3::new(REGION_MARKERS[1] + 1.0, 0.0, 0.0),
+                RegionId::Cervix,
+            ),
+            (
+                Vec3::new(REGION_MARKERS[2] + 1.0, 0.0, 0.0),
+                RegionId::Uterus,
+            ),
+            (Vec3::new(REGION_MARKERS[3] + 1.0, 0.0, 0.0), RegionId::Utj),
+            (Vec3::new(REGION_MARKERS[4] + 1.0, 0.0, 0.0), RegionId::Tube),
+            (
+                Vec3::new(REGION_MARKERS[5] + 10.0, 0.0, 0.0),
+                RegionId::Ampulla,
+            ),
         ];
 
         for (pos, expected) in checkpoints {
