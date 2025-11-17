@@ -15,7 +15,7 @@ authors = ["Odyssey Team"]
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 bincode = "1"
-bevy = { version = "0.17", features = ["bevy_winit", "png", "dynamic_linking"] }
+bevy = { version = "0.17", features = ["bevy_winit", "png"] }
 bevy_renet = "3.0.0"
 renet = "1.2.0"
 glam = { version = "0.27", features = ["serde"] }
