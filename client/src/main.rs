@@ -3,13 +3,15 @@ use std::{net::UdpSocket, time::SystemTime};
 use bevy::math::primitives::{Capsule3d, Cylinder, Sphere};
 use bevy::prelude::*;
 use bevy::time::Fixed;
+use bevy::ui::{Node, PositionType, Val};
 use bevy::window::WindowResolution;
 use bevy_renet::netcode::{ClientAuthentication, NetcodeClientPlugin, NetcodeClientTransport};
 use bevy_renet::renet::{ConnectionConfig, RenetClient};
 use bevy_renet::RenetClientPlugin;
 use rand::Rng;
-use shared::*;
+use shared::*; // PROTOCOL_ID, TICK_RATE, TRACK_LENGTH, REGION_MARKERS, RegionId, InputFrame, ClientMessage, etc.
 
+/// Local client info
 #[derive(Resource)]
 struct LocalPlayer {
     name: String,
@@ -18,17 +20,21 @@ struct LocalPlayer {
     client_id: u64,
 }
 
+/// Monotonic tick for InputFrame
 #[derive(Resource, Default)]
 struct SnapshotTick(u32);
 
+/// Tag for player's sperm avatar
 #[derive(Component)]
 struct PlayerAvatar {
     id: u64,
 }
 
+/// Simple velocity wrapper
 #[derive(Component, Deref, DerefMut)]
 struct Velocity(Vec3);
 
+/// Camera behavior
 #[derive(Component)]
 struct FollowCamera {
     target: u64,
@@ -36,8 +42,13 @@ struct FollowCamera {
     height: f32,
 }
 
+/// HUD text component
+#[derive(Component)]
+struct HudText;
+
 fn main() {
     App::new()
+        // Window + renderer
         .add_plugins(DefaultPlugins.set(WindowPlugin {
             primary_window: Some(Window {
                 title: "Odyssey: Race to the Egg".into(),
@@ -47,11 +58,14 @@ fn main() {
             }),
             ..Default::default()
         }))
+        // Networking
         .add_plugins(RenetClientPlugin)
         .add_plugins(NetcodeClientPlugin)
         .insert_resource(SnapshotTick::default())
         .insert_resource(ClearColor(Color::srgb(0.02, 0.02, 0.08)))
-        .add_systems(Startup, (setup_scene, start_connection))
+        // Startup: scene + UI + connection
+        .add_systems(Startup, (setup_scene, setup_ui, start_connection))
+        // Frame systems
         .add_systems(
             Update,
             (
@@ -59,37 +73,49 @@ fn main() {
                 apply_snapshots,
                 assign_follow_target,
                 camera_follow_target,
+                update_hud,
             ),
         )
+        // Fixed tick for input sending
         .insert_resource(Time::<Fixed>::from_hz(TICK_RATE as f64))
         .add_systems(FixedUpdate, send_inputs)
         .run();
 }
 
+/// Create camera, lights, tunnel and egg
 fn setup_scene(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
 ) {
+    // Camera: start OUTSIDE the tunnel with a nice overview
     commands.spawn((
         Camera3d::default(),
-        Transform::from_xyz(-200.0, 60.0, 160.0).looking_at(Vec3::new(0.0, 10.0, 0.0), Vec3::Y),
+        Transform::from_xyz(-600.0, 260.0, 520.0)
+            .looking_at(Vec3::new(TRACK_LENGTH * 0.5, 0.0, 0.0), Vec3::Y),
         FollowCamera {
             target: 0,
-            distance: 140.0,
-            height: 32.0,
+            distance: 220.0,
+            height: 80.0,
         },
     ));
 
+    // Directional light
     commands.spawn((
         DirectionalLight {
             shadows_enabled: true,
             illuminance: 25_000.0,
             ..Default::default()
         },
-        Transform::from_rotation(Quat::from_euler(EulerRot::ZYX, 0.5, -0.6, 0.0)),
+        Transform::from_rotation(Quat::from_euler(
+            EulerRot::ZYX,
+            0.5,
+            -0.6,
+            0.0,
+        )),
     ));
 
+    // Some colored point lights along the track
     for i in 0..4 {
         let phase = i as f32 * 0.7;
         commands.spawn((
@@ -108,6 +134,25 @@ fn setup_scene(
     spawn_egg(&mut commands, &mut meshes, &mut materials);
 }
 
+/// Simple HUD in the top-left corner
+fn setup_ui(mut commands: Commands) {
+    commands.spawn((
+        HudText,
+        Text::new("Odyssey 3D – starting..."),
+        TextFont {
+            font_size: 18.0,
+            ..Default::default()
+        },
+        TextColor(Color::srgb(0.9, 0.9, 1.0)),
+        Node {
+            position_type: PositionType::Absolute,
+            top: Val::Px(10.0),
+            left: Val::Px(10.0),
+            ..Default::default()
+        },
+    ));
+}
+
 fn spawn_tunnel(
     commands: &mut Commands,
     meshes: &mut ResMut<Assets<Mesh>>,
@@ -122,8 +167,8 @@ fn spawn_tunnel(
         RegionId::Ampulla,
     ];
 
-    for window in REGION_MARKERS.windows(2).enumerate() {
-        let (idx, segment) = window;
+    // Each pair of REGION_MARKERS describes a segment
+    for (idx, segment) in REGION_MARKERS.windows(2).enumerate() {
         let start = segment[0];
         let end = segment[1];
         let length = end - start;
@@ -169,6 +214,7 @@ fn spawn_egg(
     ));
 }
 
+/// Create Renet client + transport + LocalPlayer
 fn start_connection(mut commands: Commands) {
     let client_id: u64 = rand::thread_rng().gen();
     let current_time = SystemTime::now()
@@ -197,12 +243,14 @@ fn start_connection(mut commands: Commands) {
     });
 }
 
+/// Once connected, send JoinRoom + auto-ready + auto-start
 fn poll_connection_status(mut client: ResMut<RenetClient>, mut player: ResMut<LocalPlayer>) {
     if client.is_disconnected() {
         return;
     }
 
     if client.is_connected() && !player.joined {
+        // 1) Join the room so server knows our name
         let join = ClientMessage::JoinRoom {
             name: player.name.clone(),
             room_code: player.room_code.clone(),
@@ -210,10 +258,22 @@ fn poll_connection_status(mut client: ResMut<RenetClient>, mut player: ResMut<Lo
         if let Ok(bytes) = bincode::serialize(&join) {
             client.send_message(0, bytes);
         }
+
+        // 2) Auto-mark ourselves ready
+        if let Ok(bytes) = bincode::serialize(&ClientMessage::SetReady { ready: true }) {
+            client.send_message(0, bytes);
+        }
+
+        // 3) Ask to start the race (only host’s request is honored)
+        if let Ok(bytes) = bincode::serialize(&ClientMessage::StartRace) {
+            client.send_message(0, bytes);
+        }
+
         player.joined = true;
     }
 }
 
+/// Read keyboard and send InputFrame at fixed tick rate
 fn send_inputs(
     keyboard: Option<Res<ButtonInput<KeyCode>>>,
     mut client: ResMut<RenetClient>,
@@ -240,6 +300,7 @@ fn send_inputs(
     }
 }
 
+/// Apply snapshots from server: spawn/update/despawn avatars
 fn apply_snapshots(
     mut commands: Commands,
     mut client: ResMut<RenetClient>,
@@ -265,16 +326,19 @@ fn apply_snapshots(
             if let ServerMessage::Snapshot { entities, .. } = msg {
                 let live_ids: Vec<u64> = entities.iter().map(|e| e.id).collect();
 
+                // Despawn avatars that disappeared from snapshot
                 for (entity, _, _, avatar, _) in avatars.iter_mut() {
                     if !live_ids.iter().any(|id| *id == avatar.id) {
                         commands.entity(entity).despawn();
                     }
                 }
 
+                // Update or spawn avatars
                 for snapshot in entities {
                     let pos = Vec3::from(snapshot.position);
                     let vel = Vec3::from(snapshot.velocity);
                     let region = snapshot.region.clone();
+
                     if let Some((_, mut transform, mut velocity, _, material)) = avatars
                         .iter_mut()
                         .find(|(_, _, _, avatar, _)| avatar.id == snapshot.id)
@@ -328,6 +392,7 @@ fn spawn_avatar(
     ));
 }
 
+/// Once we know our LocalPlayer, assign camera target id
 fn assign_follow_target(player: Option<Res<LocalPlayer>>, mut cameras: Query<&mut FollowCamera>) {
     let Some(player) = player else { return };
     let Ok(mut follow) = cameras.single_mut() else {
@@ -338,18 +403,22 @@ fn assign_follow_target(player: Option<Res<LocalPlayer>>, mut cameras: Query<&mu
     }
 }
 
+/// Camera follows target sperm; queries are made disjoint with `Without`
+/// to satisfy Bevy's borrowing rules.
 fn camera_follow_target(
-    mut cameras: Query<(&mut Transform, &FollowCamera)>,
-    avatars: Query<(&PlayerAvatar, &Transform, &Velocity)>,
+    mut cameras: Query<(&mut Transform, &FollowCamera), Without<PlayerAvatar>>,
+    avatars: Query<(&PlayerAvatar, &Transform, &Velocity), Without<FollowCamera>>,
 ) {
     let Ok((mut cam_tf, follow)) = cameras.single_mut() else {
         return;
     };
 
+    // Find the avatar we want to follow
     let Some((_, target_tf, vel)) = avatars
         .iter()
         .find(|(avatar, _, _)| avatar.id == follow.target)
     else {
+        // If no matching avatar (e.g. server not sending yet), keep initial position
         return;
     };
 
@@ -359,11 +428,46 @@ fn camera_follow_target(
         Vec3::X
     };
 
-    let desired = target_tf.translation - forward * follow.distance + Vec3::Y * follow.height;
+    let desired =
+        target_tf.translation - forward * follow.distance + Vec3::Y * follow.height;
+
     cam_tf.translation = cam_tf.translation.lerp(desired, 0.08);
     cam_tf.look_at(target_tf.translation + forward * 20.0, Vec3::Y);
 }
 
+/// Update HUD with connection + player count
+fn update_hud(
+    client: Option<Res<RenetClient>>,
+    avatars: Query<&PlayerAvatar>,
+    mut hud_query: Query<&mut Text, With<HudText>>,
+) {
+    let Ok(mut text) = hud_query.single_mut() else {
+        return;
+    };
+
+    let status = if let Some(client) = client {
+        if client.is_connected() {
+            "Connected"
+        } else if client.is_disconnected() {
+            "Disconnected"
+        } else {
+            "Connecting..."
+        }
+    } else {
+        "No client"
+    };
+
+    let count = avatars.iter().count();
+
+    *text = Text::new(format!(
+        "Odyssey: Race to the Egg\n\
+         Status: {status}\n\
+         Players seen: {count}\n\
+         Controls: WASD / Arrows to steer, Space or Left Shift to boost"
+    ));
+}
+
+/// Color palette per region
 fn color_for_region(region: RegionId) -> Color {
     match region {
         RegionId::Vagina => Color::srgb(0.45, 0.14, 0.30),
